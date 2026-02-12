@@ -13,11 +13,16 @@ RUN sed -i '/ru_RU.UTF-8/s/^# //g' /etc/locale.gen && \
 ENV LANG=ru_RU.UTF-8
 ENV LC_ALL=ru_RU.UTF-8
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Create non-root user
+RUN useradd -m -u 1000 botuser && chown -R botuser:botuser /app
+USER botuser
 
-COPY . .
+COPY --chown=botuser:botuser requirements.txt .
+RUN pip install --no-cache-dir --user -r requirements.txt
+
+COPY --chown=botuser:botuser . .
 
 ENV PYTHONUNBUFFERED=1
+ENV PATH=/home/botuser/.local/bin:$PATH
 
 CMD ["python", "main.py"]
