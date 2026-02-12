@@ -465,10 +465,14 @@ def main():
     
     if WEBHOOK_HOST:
         logger.info(f"Setting up webhook at {WEBHOOK_URL}")
-        bot.remove_webhook()
-        time.sleep(1)
-        bot.set_webhook(url=WEBHOOK_URL)
-        logger.info("Webhook set up successfully")
+        try:
+            # Drop pending updates and remove webhook
+            bot.remove_webhook(drop_pending_updates=True)
+            time.sleep(2)
+            bot.set_webhook(url=WEBHOOK_URL, drop_pending_updates=True)
+            logger.info("Webhook set up successfully")
+        except Exception as e:
+            logger.error(f"Webhook setup error: {e}")
         
         # Run Flask app
         app.run(host='0.0.0.0', port=WEBHOOK_PORT)
