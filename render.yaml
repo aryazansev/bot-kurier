@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: bot-kurier
+    runtime: docker
+    plan: free
+    envVars:
+      - key: TG_TOKEN
+        sync: false
+      - key: RETAIL_URL
+        sync: false
+      - key: RETAIL_KEY
+        sync: false
+    disk:
+      name: bot-data
+      mountPath: /app
+      sizeGB: 1
