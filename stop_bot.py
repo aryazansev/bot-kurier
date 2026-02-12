@@ -19,10 +19,9 @@ print("Удаление webhook и сброс pending updates...")
 bot = telebot.TeleBot(token)
 
 try:
-    # Remove webhook and drop all pending updates
-    bot.remove_webhook(drop_pending_updates=True)
+    # Remove webhook
+    bot.remove_webhook()
     print("✓ Webhook удален")
-    print("✓ Pending updates очищены")
     print("\nБот остановлен. Теперь можно запустить новый экземпляр.")
 except Exception as e:
     print(f"Ошибка: {e}")

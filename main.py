@@ -466,10 +466,10 @@ def main():
     if WEBHOOK_HOST:
         logger.info(f"Setting up webhook at {WEBHOOK_URL}")
         try:
-            # Drop pending updates and remove webhook
-            bot.remove_webhook(drop_pending_updates=True)
+            # Remove webhook first
+            bot.remove_webhook()
             time.sleep(2)
-            bot.set_webhook(url=WEBHOOK_URL, drop_pending_updates=True)
+            bot.set_webhook(url=WEBHOOK_URL)
             logger.info("Webhook set up successfully")
         except Exception as e:
             logger.error(f"Webhook setup error: {e}")
