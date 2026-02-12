@@ -112,7 +112,6 @@ def register_handlers():
                 bot.delete_message(message.chat.id, message.message_id)
         except Exception as e:
             logger.error(f"Error in send_menu: {e}")
-            bot.send_message(message.chat.id, "Произошла ошибка. Попробуйте позже.")
 
     @bot.message_handler(content_types=['contact'])
     def auth(message: Message):
