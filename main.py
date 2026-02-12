@@ -104,8 +104,10 @@ def register_handlers():
                 return
 
             markup = telebot.types.InlineKeyboardMarkup()
-            button1 = telebot.types.InlineKeyboardButton(text='Получить список заказов', callback_data='get_orders')
+            button1 = telebot.types.InlineKeyboardButton(text='📋 Получить список заказов', callback_data='get_orders')
+            button2 = telebot.types.InlineKeyboardButton(text='🏆 Мой рейтинг', callback_data='my_rating')
             markup.add(button1)
+            markup.add(button2)
             bot.send_message(chat_id=message.chat.id, text='Выберите действие:', reply_markup=markup)
 
             if need_delete_massage:
@@ -153,6 +155,70 @@ def register_handlers():
     @bot.callback_query_handler(lambda call: 'menu' in call.data)
     def menu(call):
         send_menu(call.message)
+
+    @bot.message_handler(commands=['rating'])
+    def rating_command(message: Message):
+        try:
+            courier = db.get_courier_id(message.chat.id)
+            if courier is None:
+                starter(message)
+                return
+            
+            show_rating(message.chat.id, courier)
+        except Exception as e:
+            logger.error(f"Error in rating command: {e}")
+
+    def show_rating(chat_id, courier_id):
+        """Show rating stats for a courier"""
+        try:
+            day_count = db.get_completed_orders_count(courier_id, 'day')
+            week_count = db.get_completed_orders_count(courier_id, 'week')
+            month_count = db.get_completed_orders_count(courier_id, 'month')
+            
+            # Get top couriers for each period
+            top_day = db.get_top_couriers('day', 5)
+            top_week = db.get_top_couriers('week', 5)
+            top_month = db.get_top_couriers('month', 5)
+            
+            message = "🏆 <b>Ваш рейтинг</b>\n\n"
+            message += f"📊 <b>Статистика доставок:</b>\n"
+            message += f"  Сегодня: {day_count} заказов\n"
+            message += f"  За неделю: {week_count} заказов\n"
+            message += f"  За месяц: {month_count} заказов\n\n"
+            
+            # Find courier's position in daily top
+            day_position = None
+            for i, (cid, count) in enumerate(top_day, 1):
+                if cid == courier_id:
+                    day_position = i
+                    break
+            
+            if day_position:
+                message += f"⭐ <b>Ваша позиция:</b>\n"
+                message += f"  За сегодня: #{day_position} место\n"
+            else:
+                message += "⭐ Продолжайте работать, чтобы попасть в топ!\n"
+            
+            markup = telebot.types.InlineKeyboardMarkup()
+            button = telebot.types.InlineKeyboardButton(text='🏠 В меню', callback_data='menu')
+            markup.add(button)
+            
+            bot.send_message(chat_id, message, parse_mode='HTML', reply_markup=markup)
+        except Exception as e:
+            logger.error(f"Error showing rating: {e}")
+
+    @bot.callback_query_handler(lambda call: 'my_rating' in call.data)
+    def my_rating_callback(call):
+        try:
+            bot.delete_message(call.message.chat.id, call.message.message_id)
+            courier = db.get_courier_id(call.message.chat.id)
+            if courier is None:
+                starter(call.message)
+                return
+            
+            show_rating(call.message.chat.id, courier)
+        except Exception as e:
+            logger.error(f"Error in my_rating callback: {e}")
 
     @bot.callback_query_handler(lambda call: 'get_orders' in call.data)
     def get_orders(call):
@@ -310,12 +376,29 @@ def register_handlers():
 
             if command == 'DELIVERY':
                 new_status = 'zakaz-dostavlen'
-                text_message = f"<b>Вы доставили заказ {order['number']}.</b>\n"
+                
+                # Track completed order
+                db.add_completed_order(courier, order_id, order['number'])
+                
+                # Get motivational phrase
+                motivational = db.get_random_motivational_phrase()
+                
+                # Get personal stats
+                day_count = db.get_completed_orders_count(courier, 'day')
+                week_count = db.get_completed_orders_count(courier, 'week')
+                month_count = db.get_completed_orders_count(courier, 'month')
+                
+                text_message = f"<b>✅ Заказ {order['number']} доставлен!</b>\n\n"
+                text_message += f"🎉 {motivational}\n\n"
+                text_message += f"📊 <b>Ваша статистика:</b>\n"
+                text_message += f"  За сегодня: {day_count} заказов\n"
+                text_message += f"  За неделю: {week_count} заказов\n"
+                text_message += f"  За месяц: {month_count} заказов\n\n"
                 text_message += get_order_text(order)
                 order_photos = get_order_photos(order)
             elif command == 'CANCEL':
                 new_status = 'vozvrat-im'
-                text_message = f"Вы вернули заказ {order['number']}"
+                text_message = f"❌ Вы вернули заказ {order['number']}"
                 order_photos = []
 
             client.order_edit(
