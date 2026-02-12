@@ -12,6 +12,7 @@ from telebot.types import Message, KeyboardButton, ReplyKeyboardMarkup, Callback
 from datetime import datetime
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+from flask import Flask, request
 
 from db import DB
 
@@ -439,22 +440,53 @@ def order_approve(call):
         send_menu(call.message)
 
 
+app = Flask(__name__)
+
+WEBHOOK_HOST = os.getenv('RENDER_EXTERNAL_HOSTNAME')
+WEBHOOK_PORT = int(os.getenv('PORT', 10000))
+WEBHOOK_URL = f"https://{WEBHOOK_HOST}/{os.getenv('TG_TOKEN')}" if WEBHOOK_HOST else None
+
+@app.route('/')
+def index():
+    return 'Bot is running!'
+
+@app.route(f'/{os.getenv("TG_TOKEN")}', methods=['POST'])
+def webhook():
+    if request.headers.get('content-type') == 'application/json':
+        json_string = request.get_data().decode('utf-8')
+        update = telebot.types.Update.de_json(json_string)
+        bot.process_new_updates([update])
+        return ''
+    else:
+        return 'Error: Invalid content type', 403
+
 def main():
     logger.info("Bot starting...")
     
-    while True:
-        try:
-            logger.info("Starting polling...")
-            bot.polling(
-                none_stop=True,
-                interval=1,
-                timeout=30,
-                long_polling_timeout=30
-            )
-        except Exception as e:
-            logger.error(f"Polling error: {e}")
-            logger.info("Restarting in 5 seconds...")
-            time.sleep(5)
+    if WEBHOOK_HOST:
+        logger.info(f"Setting up webhook at {WEBHOOK_URL}")
+        bot.remove_webhook()
+        time.sleep(1)
+        bot.set_webhook(url=WEBHOOK_URL)
+        logger.info("Webhook set up successfully")
+        
+        # Run Flask app
+        app.run(host='0.0.0.0', port=WEBHOOK_PORT)
+    else:
+        logger.info("No RENDER_EXTERNAL_HOSTNAME set, using polling mode")
+        while True:
+            try:
+                logger.info("Starting polling...")
+                bot.polling(
+                    none_stop=True,
+                    interval=1,
+                    timeout=30,
+                    long_polling_timeout=30
+                )
+            except Exception as e:
+                logger.error(f"Polling error: {e}")
+                logger.info("Restarting in 5 seconds...")
+                time.sleep(5)
 
 
 if __name__ == "__main__":

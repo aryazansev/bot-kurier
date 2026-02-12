@@ -25,4 +25,4 @@ COPY --chown=botuser:botuser . .
 ENV PYTHONUNBUFFERED=1
 ENV PATH=/home/botuser/.local/bin:$PATH
 
-CMD ["python", "main.py"]
+CMD ["gunicorn", "-w", "1", "-b", "0.0.0.0:10000", "main:app"]

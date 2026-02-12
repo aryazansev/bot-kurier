@@ -10,7 +10,5 @@ services:
         sync: false
       - key: RETAIL_KEY
         sync: false
-    disk:
-      name: bot-data
-      mountPath: /app
-      sizeGB: 1
+      - key: PORT
+        value: 10000
