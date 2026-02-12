@@ -452,16 +452,23 @@ def index():
 
 @app.route(f'/{os.getenv("TG_TOKEN")}', methods=['POST'])
 def webhook():
+    logger.info("Webhook received request")
     if request.headers.get('content-type') == 'application/json':
         json_string = request.get_data().decode('utf-8')
+        logger.info(f"Webhook data: {json_string[:200]}...")  # Log first 200 chars
         update = telebot.types.Update.de_json(json_string)
         bot.process_new_updates([update])
+        logger.info("Webhook processed successfully")
         return ''
     else:
+        logger.error(f"Invalid content type: {request.headers.get('content-type')}")
         return 'Error: Invalid content type', 403
 
 def main():
     logger.info("Bot starting...")
+    logger.info(f"WEBHOOK_HOST: {WEBHOOK_HOST}")
+    logger.info(f"WEBHOOK_PORT: {WEBHOOK_PORT}")
+    logger.info(f"WEBHOOK_URL: {WEBHOOK_URL}")
     
     if WEBHOOK_HOST:
         logger.info(f"Setting up webhook at {WEBHOOK_URL}")
@@ -469,12 +476,17 @@ def main():
             # Remove webhook first
             bot.remove_webhook()
             time.sleep(2)
-            bot.set_webhook(url=WEBHOOK_URL)
-            logger.info("Webhook set up successfully")
+            result = bot.set_webhook(url=WEBHOOK_URL)
+            logger.info(f"Webhook set up result: {result}")
+            
+            # Verify webhook
+            webhook_info = bot.get_webhook_info()
+            logger.info(f"Webhook info: {webhook_info}")
         except Exception as e:
             logger.error(f"Webhook setup error: {e}")
         
         # Run Flask app
+        logger.info(f"Starting Flask server on port {WEBHOOK_PORT}")
         app.run(host='0.0.0.0', port=WEBHOOK_PORT)
     else:
         logger.info("No RENDER_EXTERNAL_HOSTNAME set, using polling mode")
