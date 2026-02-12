@@ -12,7 +12,7 @@ from telebot.types import Message, KeyboardButton, ReplyKeyboardMarkup, Callback
 from datetime import datetime
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
-from flask import Flask, request
+from flask import Flask, request, jsonify
 
 from db import DB
 
@@ -540,6 +540,12 @@ def get_order_photos(order):
 @app.route('/')
 def index():
     return 'Bot is running!'
+
+
+@app.route('/health')
+def health():
+    """Health check endpoint to keep service awake"""
+    return jsonify({'status': 'ok', 'service': 'bot-kurier'})
 
 
 @app.route('/<path:token>', methods=['POST'])
