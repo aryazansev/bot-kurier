@@ -334,23 +334,6 @@ def register_handlers():
 
             markup = telebot.types.InlineKeyboardMarkup()
             
-            # Get customer phone for call button
-            try:
-                customer_phone = order.get('phone', '')
-                if customer_phone:
-                    # Clean phone number (remove all non-digit characters except +)
-                    clean_phone = ''.join(c for c in str(customer_phone) if c.isdigit() or c == '+')
-                    if clean_phone and not clean_phone.startswith('+'):
-                        clean_phone = '+' + clean_phone
-                    if clean_phone:
-                        call_button = telebot.types.InlineKeyboardButton(
-                            text='📞 Позвонить клиенту',
-                            url=f'tel:{clean_phone}'
-                        )
-                        markup.add(call_button)
-            except Exception as e:
-                logger.error(f"Error creating call button for order {order_id}: {e}")
-            
             button1 = telebot.types.InlineKeyboardButton(text='◀️ Назад', callback_data='get_orders')
             markup.add(button1)
 
@@ -502,11 +485,23 @@ def get_order_text(order):
         try:
             name_parts = ['lastName', 'firstName', 'patronymic']
             sender_name = ' '.join(filter(None, [order.get(part, '') for part in name_parts]))
-            sender_phone = order.get('phone', 'не указан')
-            order_text += f"Заказчик: <i>{sender_name}</i> <b>{sender_phone}</b>\n"
+            sender_phone = order.get('phone', '')
+            if sender_phone:
+                # Clean phone number
+                clean_phone = ''.join(c for c in str(sender_phone) if c.isdigit() or c == '+')
+                if clean_phone and not clean_phone.startswith('+'):
+                    clean_phone = '+' + clean_phone
+                if clean_phone:
+                    # Make phone clickable
+                    order_text += f"📞 <b><a href='tel:{clean_phone}'>{sender_phone}</a></b>\n"
+                else:
+                    order_text += f"📞 {sender_phone}\n"
+            else:
+                order_text += "📞 Телефон не указан\n"
+            order_text += f"👤 <i>{sender_name}</i>\n"
         except Exception as e:
             logger.error(f"Error getting sender info: {e}")
-            order_text += "Заказчик: (информация недоступна)\n"
+            order_text += "👤 Заказчик: (информация недоступна)\n"
 
         # Recipient
         try:
