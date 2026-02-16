@@ -337,6 +337,18 @@ def register_handlers():
             button1 = telebot.types.InlineKeyboardButton(text='◀️ Назад', callback_data='get_orders')
             markup.add(button1)
 
+            # Add call button that sends contact info
+            try:
+                customer_phone = order.get('phone', '')
+                if customer_phone:
+                    call_btn = telebot.types.InlineKeyboardButton(
+                        text='📞 Позвонить',
+                        callback_data=f'CALL_CUSTOMER;{order_id}'
+                    )
+                    markup.add(call_btn)
+            except Exception as e:
+                logger.error(f"Error creating call button: {e}")
+            
             button2 = telebot.types.InlineKeyboardButton(
                 text='↩️ Возврат',
                 callback_data=f'ORDER_APPROVE;{order_id};CANCEL'
@@ -386,6 +398,48 @@ def register_handlers():
                 send_menu(call.message)
             except:
                 pass
+
+    @bot.callback_query_handler(lambda call: 'CALL_CUSTOMER;' in call.data)
+    def call_customer(call):
+        """Handle call customer button - send phone number as clickable message"""
+        try:
+            logger.info(f"Call customer requested for order: {call.data}")
+            courier = db.get_courier_id(call.message.chat.id)
+            if courier is None:
+                starter(call.message)
+                return
+            
+            order_id = call.data.split(';')[1]
+            
+            try:
+                order = client.order(order_id, 'id').get_response()['order']
+            except Exception as e:
+                logger.error(f"Error fetching order {order_id}: {e}")
+                bot.send_message(call.message.chat.id, 'Не удалось получить информацию о заказе.')
+                return
+            
+            # Get customer phone
+            customer_phone = order.get('phone', '')
+            if not customer_phone:
+                bot.send_message(call.message.chat.id, '❌ Телефон клиента не указан в заказе.')
+                return
+            
+            # Clean phone number
+            clean_phone = ''.join(c for c in str(customer_phone) if c.isdigit() or c == '+')
+            if clean_phone and not clean_phone.startswith('+'):
+                clean_phone = '+' + clean_phone
+            
+            # Send phone number as a message (it will be clickable)
+            message = f"📞 <b>Телефон клиента:</b>\n\n"
+            message += f"<code>{clean_phone}</code>\n\n"
+            message += f"Нажмите на номер чтобы позвонить"
+            
+            bot.send_message(call.message.chat.id, message, parse_mode='HTML')
+            logger.info(f"Phone number sent for order {order_id}")
+            
+        except Exception as e:
+            logger.error(f"Error in call_customer: {e}")
+            bot.send_message(call.message.chat.id, '❌ Ошибка при получении номера телефона.')
 
     @bot.callback_query_handler(lambda call: 'ORDER_APPROVE;' in call.data)
     def order_approve(call):
