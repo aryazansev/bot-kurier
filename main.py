@@ -432,7 +432,7 @@ def register_handlers():
             # Send phone number as a message (it will be clickable)
             message = f"📞 <b>Телефон клиента:</b>\n\n"
             message += f"<code>{clean_phone}</code>\n\n"
-            message += f"Нажмите на номер чтобы позвонить"
+            message += f"Нажмите на номер чтобы скопировать"
             
             bot.send_message(call.message.chat.id, message, parse_mode='HTML')
             logger.info(f"Phone number sent for order {order_id}")
