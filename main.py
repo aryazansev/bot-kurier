@@ -291,26 +291,46 @@ def register_handlers():
     @bot.callback_query_handler(lambda call: 'ORDER;' in call.data)
     def order_info(call):
         try:
+            logger.info(f"order_info called with data: {call.data}")
             courier = db.get_courier_id(call.message.chat.id)
             if courier is None:
+                logger.warning(f"No courier found for chat_id: {call.message.chat.id}")
                 starter(call.message)
                 return
 
             order_id = call.data.split(';')[1]
-            order = client.order(order_id, 'id').get_response()['order']
+            logger.info(f"Fetching order {order_id} for courier {courier}")
+            
+            try:
+                order = client.order(order_id, 'id').get_response()['order']
+                logger.info(f"Order {order_id} fetched successfully")
+            except Exception as e:
+                logger.error(f"Error fetching order {order_id} from API: {e}")
+                bot.send_message(call.message.chat.id, 'Не удалось получить информацию о заказе из системы. Попробуйте позже.')
+                send_menu(call.message)
+                return
 
             if order['delivery']['data']['courierId'] != courier:
+                logger.warning(f"Order {order_id} courier mismatch: {order['delivery']['data']['courierId']} != {courier}")
                 bot.send_message(call.message.chat.id, 'Что-то пошло не так, выберите заказ повторно:')
                 send_menu(call.message)
                 return
 
             if order['status'] not in ['dostavliaet-kurer-ash', 'dostavliaet-kurer-iandeks']:
-                bot.send_message(call.message.chat.id, 'Что-то пошло не так, выберите заказ повторно:')
+                logger.warning(f"Order {order_id} has wrong status: {order['status']}")
+                bot.send_message(call.message.chat.id, 'Статус заказа изменился, выберите заказ повторно:')
                 send_menu(call.message)
                 return
 
-            order_text = f"Заказ: <b>{order['number']}</b>\n"
-            order_text += get_order_text(order)
+            try:
+                order_text = f"Заказ: <b>{order['number']}</b>\n"
+                order_text += get_order_text(order)
+                logger.info(f"Order text generated for order {order_id}")
+            except Exception as e:
+                logger.error(f"Error generating order text for {order_id}: {e}")
+                bot.send_message(call.message.chat.id, 'Ошибка при формировании информации о заказе. Попробуйте позже.')
+                send_menu(call.message)
+                return
 
             markup = telebot.types.InlineKeyboardMarkup()
             button1 = telebot.types.InlineKeyboardButton(text='Назад', callback_data='get_orders')
@@ -327,24 +347,45 @@ def register_handlers():
             )
             markup.add(button2, button3)
 
-            order_photos = get_order_photos(order)
+            try:
+                order_photos = get_order_photos(order)
+                logger.info(f"Got {len(order_photos)} photos for order {order_id}")
+            except Exception as e:
+                logger.error(f"Error getting order photos for {order_id}: {e}")
+                order_photos = []
 
-            if len(order_photos) > 0:
-                first_photo = order_photos[0]
-                bot.delete_message(call.message.chat.id, call.message.message_id)
-                bot.send_photo(call.message.chat.id, first_photo, caption=order_text, parse_mode='HTML', reply_markup=markup)
-            else:
-                bot.edit_message_text(
-                    order_text,
-                    call.message.chat.id,
-                    call.message.message_id,
-                    parse_mode='HTML',
-                    reply_markup=markup
-                )
+            try:
+                if len(order_photos) > 0:
+                    first_photo = order_photos[0]
+                    bot.delete_message(call.message.chat.id, call.message.message_id)
+                    bot.send_photo(call.message.chat.id, first_photo, caption=order_text, parse_mode='HTML', reply_markup=markup)
+                    logger.info(f"Order {order_id} info sent with photo")
+                else:
+                    bot.edit_message_text(
+                        order_text,
+                        call.message.chat.id,
+                        call.message.message_id,
+                        parse_mode='HTML',
+                        reply_markup=markup
+                    )
+                    logger.info(f"Order {order_id} info sent without photo")
+            except Exception as e:
+                logger.error(f"Error sending order info for {order_id}: {e}")
+                # Try to send as new message if edit fails
+                try:
+                    bot.send_message(call.message.chat.id, order_text, parse_mode='HTML', reply_markup=markup)
+                    logger.info(f"Order {order_id} info sent as new message")
+                except Exception as e2:
+                    logger.error(f"Failed to send order info as new message for {order_id}: {e2}")
+                    bot.send_message(call.message.chat.id, "Ошибка при отображении заказа. Попробуйте получить список заказов снова.")
+                    send_menu(call.message)
         except Exception as e:
-            logger.error(f"Error in order_info: {e}")
-            bot.send_message(call.message.chat.id, "Ошибка при получении информации о заказе. Попробуйте позже.")
-            send_menu(call.message)
+            logger.error(f"Critical error in order_info: {e}")
+            try:
+                bot.send_message(call.message.chat.id, "Произошла ошибка. Попробуйте получить список заказов снова.")
+                send_menu(call.message)
+            except:
+                pass
 
     @bot.callback_query_handler(lambda call: 'ORDER_APPROVE;' in call.data)
     def order_approve(call):
@@ -427,87 +468,134 @@ def register_handlers():
 
 
 def get_order_text(order):
-    items_string = ''
-    for item in order.get('items', []):
-        item_name = item.get('offer', {}).get('displayName', '- Нет названия -')
-        items_string += f" - {item_name}, {item['quantity']} шт.\n"
-
-    order_text = f"\nСостав заказа:\n{items_string}\n"
-
-    name_parts = ['lastName', 'firstName', 'patronymic']
-    sender_name = ' '.join(filter(None, [order.get(part, '') for part in name_parts]))
-    sender_phone = order.get('phone', {})
-
-    order_text += f"Заказчик: <i>{sender_name}</i> <b>{sender_phone}</b>\n"
-
-    recipient = order.get('customFields', {}).get('poluchatel', '')
-    order_text += f"Получатель: <i>{recipient}</i>\n"
-
-    delivery_date = order.get('delivery', {}).get('date', '?')
-    order_text += f"\nДата доставки: <b>{delivery_date}</b>\n"
-
-    delivery_time = order.get('delivery', {}).get('time', {})
-    delivery_time_from = delivery_time.get('from', '?')
-    delivery_time_to = delivery_time.get('to', '?')
-    delivery_time = f"{delivery_time_from} - {delivery_time_to}"
-    order_text += f"Время доставки: <b>{delivery_time}</b>\n"
-
-    delivery_address = order.get('delivery', {}).get('address', {})
-    delivery_address_fields = []
-    if delivery_address.get('city', ''):
-        delivery_address_fields.append(delivery_address['city'])
-    if delivery_address.get('street', ''):
-        if delivery_address.get('streetType', ''):
-            delivery_address_fields.append(f"{delivery_address['streetType']} {delivery_address['street']}")
-        else:
-            delivery_address_fields.append(delivery_address['street'])
-    if delivery_address.get('building', ''):
-        delivery_address_fields.append(f"дом {delivery_address['building']}")
-    if delivery_address.get('house', ''):
-        delivery_address_fields.append(f"строение {delivery_address['house']}")
-    if delivery_address.get('housing', ''):
-        delivery_address_fields.append(f"корпус {delivery_address['housing']}")
-    if delivery_address.get('block', ''):
-        delivery_address_fields.append(f"подъезд {delivery_address['block']}")
-    if delivery_address.get('floor', ''):
-        delivery_address_fields.append(f"этаж {delivery_address['floor']}")
-    if delivery_address.get('flat', ''):
-        delivery_address_fields.append(f"квартира {delivery_address['flat']}")
-
-    delivery_address_text = ', '.join(delivery_address_fields)
-    if delivery_address_text == '':
-        delivery_address_text = delivery_address.get('text', '')
-
-    order_text += f"Адрес доставки: <i>{delivery_address_text}</i>\n"
-
-    if delivery_address.get('notes', ''):
-        order_text += f"\nКомментарий к адресу: <i>{delivery_address['notes']}</i>\n"
-
-    customer_comment = order.get('customerComment', '')
-    if customer_comment == '':
-        customer_comment = ' - '
-    order_text += f"Комментарий клиента: <i>{customer_comment}</i>\n"
-
-    manager_comment = order.get('managerComment', '')
-    if manager_comment == '':
-        manager_comment = ' - '
-    order_text += f"Комментарий менеджера: <i>{manager_comment}</i>\n"
-
-    order_text += f"\nСтоимость: <b>{order['totalSumm']}</b>₽\n"
-
     try:
-        payment_types = client.payment_types().get_response()['paymentTypes']
-        payment_type_names = {}
-        for payment_type_code, payment_type in payment_types.items():
-            payment_type_names[payment_type['code']] = payment_type['name']
+        items_string = ''
+        for item in order.get('items', []):
+            try:
+                item_name = item.get('offer', {}).get('displayName', '- Нет названия -')
+                quantity = item.get('quantity', 1)
+                items_string += f" - {item_name}, {quantity} шт.\n"
+            except Exception as e:
+                logger.error(f"Error processing order item: {e}")
+                items_string += " - (ошибка загрузки товара)\n"
 
-        for [payment_id, payment] in order.get('payments', []).items():
-            payment_type = payment.get('type', '')
-            order_text += f"Тип оплаты: <b>{payment_type_names.get(payment_type, 'Неизвестно')}</b>\n"
-            paid_text = 'Оплачено' if payment.get('status', '') == 'paid' else 'Не оплачено'
-            order_text += f"Статус оплаты: <b>{paid_text}</b>\n"
+        order_text = f"\nСостав заказа:\n{items_string}\n"
+
+        # Sender info with safe access
+        try:
+            name_parts = ['lastName', 'firstName', 'patronymic']
+            sender_name = ' '.join(filter(None, [order.get(part, '') for part in name_parts]))
+            sender_phone = order.get('phone', 'не указан')
+            order_text += f"Заказчик: <i>{sender_name}</i> <b>{sender_phone}</b>\n"
+        except Exception as e:
+            logger.error(f"Error getting sender info: {e}")
+            order_text += "Заказчик: (информация недоступна)\n"
+
+        # Recipient
+        try:
+            recipient = order.get('customFields', {}).get('poluchatel', '')
+            if recipient:
+                order_text += f"Получатель: <i>{recipient}</i>\n"
+        except Exception as e:
+            logger.error(f"Error getting recipient: {e}")
+
+        # Delivery date and time
+        try:
+            delivery_date = order.get('delivery', {}).get('date', '?')
+            order_text += f"\nДата доставки: <b>{delivery_date}</b>\n"
+
+            delivery_time = order.get('delivery', {}).get('time', {})
+            delivery_time_from = delivery_time.get('from', '?')
+            delivery_time_to = delivery_time.get('to', '?')
+            delivery_time_str = f"{delivery_time_from} - {delivery_time_to}"
+            order_text += f"Время доставки: <b>{delivery_time_str}</b>\n"
+        except Exception as e:
+            logger.error(f"Error getting delivery time: {e}")
+            order_text += "\nИнформация о доставке недоступна\n"
+
+        # Delivery address
+        try:
+            delivery_address = order.get('delivery', {}).get('address', {})
+            delivery_address_fields = []
+            
+            fields_mapping = [
+                ('city', None),
+                ('street', 'streetType'),
+                ('building', 'дом'),
+                ('house', 'строение'),
+                ('housing', 'корпус'),
+                ('block', 'подъезд'),
+                ('floor', 'этаж'),
+                ('flat', 'квартира')
+            ]
+            
+            for field, prefix in fields_mapping:
+                value = delivery_address.get(field, '')
+                if value:
+                    if field == 'street' and delivery_address.get('streetType'):
+                        delivery_address_fields.append(f"{delivery_address['streetType']} {value}")
+                    elif prefix:
+                        delivery_address_fields.append(f"{prefix} {value}")
+                    else:
+                        delivery_address_fields.append(value)
+            
+            delivery_address_text = ', '.join(delivery_address_fields)
+            if not delivery_address_text:
+                delivery_address_text = delivery_address.get('text', 'Адрес не указан')
+            
+            order_text += f"Адрес доставки: <i>{delivery_address_text}</i>\n"
+
+            if delivery_address.get('notes'):
+                order_text += f"\nКомментарий к адресу: <i>{delivery_address['notes']}</i>\n"
+        except Exception as e:
+            logger.error(f"Error getting delivery address: {e}")
+            order_text += "Адрес доставки: (информация недоступна)\n"
+
+        # Comments
+        try:
+            customer_comment = order.get('customerComment', '')
+            if not customer_comment:
+                customer_comment = ' - '
+            order_text += f"Комментарий клиента: <i>{customer_comment}</i>\n"
+        except Exception as e:
+            logger.error(f"Error getting customer comment: {e}")
+
+        try:
+            manager_comment = order.get('managerComment', '')
+            if not manager_comment:
+                manager_comment = ' - '
+            order_text += f"Комментарий менеджера: <i>{manager_comment}</i>\n"
+        except Exception as e:
+            logger.error(f"Error getting manager comment: {e}")
+
+        # Total cost
+        try:
+            total_summ = order.get('totalSumm', 0)
+            order_text += f"\nСтоимость: <b>{total_summ}</b>₽\n"
+        except Exception as e:
+            logger.error(f"Error getting total sum: {e}")
+
+        # Payment info
+        try:
+            payment_types = client.payment_types().get_response()['paymentTypes']
+            payment_type_names = {}
+            for payment_type_code, payment_type in payment_types.items():
+                payment_type_names[payment_type['code']] = payment_type['name']
+
+            payments = order.get('payments', {})
+            if payments:
+                for payment_id, payment in payments.items():
+                    payment_type = payment.get('type', '')
+                    order_text += f"Тип оплаты: <b>{payment_type_names.get(payment_type, 'Неизвестно')}</b>\n"
+                    paid_text = 'Оплачено' if payment.get('status', '') == 'paid' else 'Не оплачено'
+                    order_text += f"Статус оплаты: <b>{paid_text}</b>\n"
+        except Exception as e:
+            logger.error(f"Error fetching payment types: {e}")
+        
+        return order_text
     except Exception as e:
-        logger.error(f"Error fetching payment types: {e}")
+        logger.error(f"Critical error in get_order_text: {e}")
+        return "\n(Не удалось загрузить полную информацию о заказе)\n"
 
     return order_text
 
