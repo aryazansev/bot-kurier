@@ -333,16 +333,33 @@ def register_handlers():
                 return
 
             markup = telebot.types.InlineKeyboardMarkup()
-            button1 = telebot.types.InlineKeyboardButton(text='Назад', callback_data='get_orders')
-
+            
+            # Get customer phone for call button
+            try:
+                customer_phone = order.get('phone', '')
+                if customer_phone:
+                    # Clean phone number (remove all non-digit characters except +)
+                    clean_phone = ''.join(c for c in str(customer_phone) if c.isdigit() or c == '+')
+                    if clean_phone and not clean_phone.startswith('+'):
+                        clean_phone = '+' + clean_phone
+                    if clean_phone:
+                        call_button = telebot.types.InlineKeyboardButton(
+                            text='📞 Позвонить клиенту',
+                            url=f'tel:{clean_phone}'
+                        )
+                        markup.add(call_button)
+            except Exception as e:
+                logger.error(f"Error creating call button for order {order_id}: {e}")
+            
+            button1 = telebot.types.InlineKeyboardButton(text='◀️ Назад', callback_data='get_orders')
             markup.add(button1)
 
             button2 = telebot.types.InlineKeyboardButton(
-                text='Возврат',
+                text='↩️ Возврат',
                 callback_data=f'ORDER_APPROVE;{order_id};CANCEL'
             )
             button3 = telebot.types.InlineKeyboardButton(
-                text='Доставлен',
+                text='✅ Доставлен',
                 callback_data=f'ORDER_APPROVE;{order_id};DELIVERY'
             )
             markup.add(button2, button3)
